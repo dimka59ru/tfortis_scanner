@@ -8,13 +8,15 @@ import socket
 import time
 import urllib.parse
 import webbrowser
+from PyQt5 import QtGui
 from threading import Thread
 # import ipdb
 import binascii
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from PyQt5.QtGui import QMovie
-from PyQt5.QtWidgets import QAbstractItemView, QLineEdit, QDialog, QMessageBox
+from PyQt5.QtWidgets import QAbstractItemView, QLineEdit, QDialog, QMessageBox, QHeaderView, QAction, qApp, QMenu, \
+    QStyle
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtWidgets import QLabel
 from PyQt5.QtWidgets import QTableWidgetItem
@@ -29,24 +31,25 @@ BUF_SIZE = 10  # Размер буфера для очереди
 q = queue.Queue(BUF_SIZE)  # Очередь, в которую будем класть найденные коммутаторы
 UDP_PORT = 6123  # Порт, по которому работаем
 IP_SEND = "255.255.255.255"  # Адрес для широковещательного запроса
-MESSAGE = b'\xE0' + b'\x00' * 279  # Сообщение для широковещательнго запроса на поиск
+MESSAGE = b'\xE0' + b'\x00' * 443  # Сообщение для широковещательнго запроса на поиск
+MESSAGE_SIZE = len(MESSAGE)
 
 ROW_COUNT = 12  # Начальное количество строк в такблице в окне
 ROW_HEIGHT = 21  # Высота строк в окне
-SEARCH_TIME = 20  # 10 сек. Время посика (прослушивания сети)
+SEARCH_TIME = 5  # 10 сек. Время посика (прослушивания сети)
 # Список моделей коммутаторов
 MODELS = {
     255: 'Unknown',
     1: 'PSW-2G',
     2: 'PSW-2G-UPS',
-    3: 'PSW-2G-PLUS',
+    3: 'PSW-2G+',
     4: 'PSW-1G4F',
     5: 'PSW-2G4F',
-    6: 'PSW-2G6F-PLUS',
-    7: 'PSW-2G8F',
+    6: 'PSW-2G6F+',
+    7: 'PSW-2G8F+',
     8: 'PSW-1G4F-UPS',
     9: 'PSW-2G4F-UPS',
-    10: 'PSW-2G2F-PLUS',
+    10: 'PSW-2G2F+',
     11: 'PSW-2G2F+UPS',
     200: 'SWU-16',
     101: 'TELEPORT-1',
@@ -65,12 +68,11 @@ appStyle = """
  }
 
 QTableView QHeaderView::section{
-
-            border-top: 1px ;
+            border-top: 1px;
             border-bottom: 1px solid #CCC;
             border-right: 1px solid #CCC;
             font: bold;
-            padding:3px;
+            padding:3px;            
 
 }
 """
@@ -96,16 +98,21 @@ class MainWindow(QWidget):
             self.setStyleSheet(appStyle)
             self.setWindowTitle(window_title)
             self.setWindowIcon(QIcon(window_icon))
-            self.resize(740, 360)
 
+            self.resize(660, 360)
             # Отображаем таблицу в окне
-            self.init_table()
+            self.init_table(self.table, row_count=ROW_COUNT, column_count=7,
+                            column_name=["Device", "IP", "Mask", "MAC", "Description", "Location", "Firmware"])
+
+            self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+            self.table.customContextMenuRequested.connect(self.open_menu)
 
             # Связывание кнопок с функциями
             self.button_search.clicked.connect(self.clicked_search)
-            self.button_edit.clicked.connect(self.clicked_edit)
+            # self.button_edit.clicked.connect(self.clicked_edit)
 
-            self.table.itemDoubleClicked.connect(self.double_click_action)
+            # self.table.itemDoubleClicked.connect(self.open_in_browser)
+            # self.table.itemSelectionChanged.connect(self.show_list_cam)
 
             # Список, в который будем класть объекты потоков
             self.list_thread = []
@@ -126,6 +133,47 @@ class MainWindow(QWidget):
             # Объект модального окна для изменения настроек коммутатора
             self.win_edit = EditWindow(parent=self)
 
+    def open_menu(self, position):
+        if self.table.selectedItems() and self.movie.state() == 0:
+            menu = QMenu()
+            open_in_browser_action = menu.addAction(QIcon("resource/internet-web-browser.png"),
+                                                    "Открыть в браузере")
+            open_in_browser_action.triggered.connect(self.open_in_browser)
+
+            edit_device_settings_action = menu.addAction(QIcon("resource/system-settings.png"),
+                                                         "Изменить настройки")
+            edit_device_settings_action.triggered.connect(self.clicked_edit)
+
+            show_list_cam_action = menu.addAction(QIcon("resource/view-media.png"),
+                                                  "Посмотреть список камер")
+            show_list_cam_action.triggered.connect(self.show_list_cam)
+
+            menu.exec_(self.table.mapToGlobal(position))
+            # quit_action = menu.addAction("Quit")
+            # quit_action.triggered.connect(qApp.quit)
+            # show_list_cam_action.triggered.connect(self.show_list_cam)
+            # action = menu.exec_(self.table.mapToGlobal(position))
+
+            # if action == show_list_cam_action:
+            #     self.show_list_cam()
+            # elif action == open_in_browser_action:
+            #     self.open_in_browser()
+            # elif action == quit_action:
+            #     qApp.quit()
+
+    def show_list_cam(self):
+        if self.table.selectedItems():
+            cams = list_cam[self.selected_row()]
+            str = ""
+            for i, cam in enumerate(cams, 1):
+
+                if not cam[1] == "0.0.0.0":
+                    str += "port #{0:2d}: {1:>14s} - {2:>18}\n".format(i, cam[1], cam[0])
+            if str == "":
+                self.information_message("Нет данных", "Список камер")
+            else:
+                self.information_message(str, "Список камер")
+
     # Функция для обработки нажатия кнопки "Искать"
     def clicked_search(self):
         self.table.clearContents()  # Очищаем таблицу от контента
@@ -133,7 +181,7 @@ class MainWindow(QWidget):
 
         # Делаем кнопки неактивными
         self.button_search.setDisabled(True)
-        self.button_edit.setDisabled(True)
+        # self.button_edit.setDisabled(True)
 
         # Отображаем gif прогресса
         self.label_progress.show()
@@ -142,10 +190,11 @@ class MainWindow(QWidget):
         # сокеты
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        # sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         # sock.setblocking(False)  # Неблокирующий сокет
-        sock.settimeout(1)
+        # sock.settimeout(1)
         sock.bind((self.my_ip, UDP_PORT))  # связываем сокет
-        sock.sendto(MESSAGE, (IP_SEND, UDP_PORT))  # Шлем сообщение в сеть
+        sock.sendto(MESSAGE, (IP_SEND, UDP_PORT))
         self.create_and_start_threads(sock)  # Создаем и запускаем треды
 
         return
@@ -172,27 +221,42 @@ class MainWindow(QWidget):
         row = indexes[0].row()
         return row
 
-    # Функция начальной инициализации таблице в окне
-    def init_table(self, row_count=12, column_count=7,
-                   column_name=["Device", "IP", "Mask", "MAC", "Description", "Location", "Firmware"]):
+    # def init_table_view_list_cam(self, row_count=16, column_count=2, column_name=None):
+    #     if column_name is None:
+    #         column_name = ["MAC", "IP"]
+    #
+    #     self.table_view_list_cam.setRowCount(row_count)  # Устанавливаем количество строк
+    #     self.table.setHorizontalHeaderLabels(column_name)  # Именуем столбцы таблицы
+    #     self.table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)  # Устанавливаем высоту строк
 
-        self.table.horizontalHeader().setStretchLastSection(True)
+    # Функция начальной инициализации таблиц в окне
+    def init_table(self, table, row_count=12, column_count=7,
+                   column_name=None):
+
+        # if column_name is None:
+        #     column_name = ["Device", "IP", "Mask", "MAC", "Description", "Location", "Firmware"]
+
+        table.horizontalHeader().setStretchLastSection(True)
         # ipdb.set_trace()  ######### Break Point ###########
 
         # Режим выделения.
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Выделяем только строки.
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)  # Выделяем только одну строку.
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)  # Выделяем только строки.
+        table.setSelectionMode(QAbstractItemView.SingleSelection)  # Выделяем только одну строку.
 
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Запрет редактирования таблицы
-        self.table.setRowCount(row_count)  # Устанавливаем количество строк
-        self.table.setColumnCount(column_count)  # Устанавливаем количество столбцов
-        self.table.setHorizontalHeaderLabels(column_name)  # Именуем столбцы таблицы
-        self.table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)  # Устанавливаем высоту строк
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # Запрет редактирования таблицы
+        table.setRowCount(row_count)  # Устанавливаем количество строк
+        table.setColumnCount(column_count)  # Устанавливаем количество столбцов
+        table.setHorizontalHeaderLabels(column_name)  # Именуем столбцы таблицы
+        table.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)  # Устанавливаем высоту строк
         # Ширина столбцов
-        self.table.horizontalHeader().resizeSection(0, 100)
-        self.table.horizontalHeader().resizeSection(1, 90)
-        self.table.horizontalHeader().resizeSection(3, 110)
-        self.table.horizontalHeader().resizeSection(6, 70)
+        for i in range(0, column_count):
+            table.horizontalHeader().resizeSection(i, 85)
+
+        table.horizontalHeader().resizeSection(3, 100)
+        # table.horizontalHeader().resizeSection(1, 80)
+        # table.horizontalHeader().resizeSection(2, 80)
+        # table.horizontalHeader().resizeSection(3, 100)
+        # table.horizontalHeader().resizeSection(6, 70)
         # self.table.verticalHeader().setVisible(False)  # Выключаем отображение номеров строк
 
     # Функция, вызываемая при закрытии окна
@@ -227,24 +291,23 @@ class MainWindow(QWidget):
         self.list_thread.append(c)
 
     # Функция для получения IP-адресов сетевых карт
-    @staticmethod
-    def get_ip_addresses():
-        addr_list = []
-        addrs = socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)
-        for addr in addrs:
-            addr_list.append(addr[4][0])
-        return addr_list
+    # @staticmethod
+    def get_ip_addresses(self):
+        try:
+            addrs = socket.gethostbyname_ex(socket.gethostname())[2]
+            return addrs
+        except Exception as e:
+            self.information_message(e)
 
     def combo_chosen(self, i):
         self.my_ip = self.iface_box.itemText(i)
 
-    def double_click_action(self, clicked):
-        url = 'http://{}'.format(self.table.item(clicked.row(), 1).text())
+    def open_in_browser(self):
+        url = 'http://{}'.format(self.table.item(self.selected_row(), 1).text())
         webbrowser.open_new_tab(url)
 
-
-    def information_message(self, message):
-        QMessageBox.information(self, "Message", message)
+    def information_message(self, message, head_text="Message"):
+        QMessageBox.information(self, head_text, message)
 
 
 class EditWindow(QDialog):
@@ -257,7 +320,6 @@ class EditWindow(QDialog):
         self.buttonBox.accepted.connect(self.press_ok)
         self.line_pswd.setEchoMode(QLineEdit.Password)
         self.setFixedSize(292, 182)
-
 
     def set_fields(self):
         indexes = mainWin.table.selectionModel().selectedRows()
@@ -277,8 +339,6 @@ class EditWindow(QDialog):
 
         self.line_edit_description.setText(mainWin.table.item(row, 4).text())
         self.line_edit_location.setText(mainWin.table.item(row, 5).text())
-
-
 
     def check_fields(self):
         pass
@@ -309,7 +369,7 @@ class EditWindow(QDialog):
         message += self.get_md5_bytes(self.get_mac(), username, password)
         message += buff_byte
 
-        message += b'\x00' * (280 - len(message))  # Добиваем сообщение нулями
+        message += b'\x00' * (MESSAGE_SIZE - len(message))  # Добиваем сообщение нулями
 
         return message
 
@@ -340,7 +400,7 @@ class EditWindow(QDialog):
         while time.time() < end_time:
             logging.debug("send data")
             try:
-                data = sock.recv(280)
+                data = sock.recv(MESSAGE_SIZE)
 
                 if hex(data[0]) == '0xe3':
                     flag_answer = True
@@ -376,7 +436,8 @@ class ProducerThread(Thread):
         while (time.time() < self.end_time) and self.running:
             if not q.full():
                 try:
-                    item = self.sock.recv(280)
+                    item = self.sock.recv(MESSAGE_SIZE)
+                    # print(item)
                     q.put(item)
                     logging.debug('Putting ' + str(item)
                                   + ' : ' + str(q.qsize()) + ' items in queue')
@@ -385,6 +446,9 @@ class ProducerThread(Thread):
                     continue
                     # time.sleep(1.01)
         return
+
+
+list_cam = {}
 
 
 class ConsumerThread(Thread):
@@ -426,9 +490,10 @@ class ConsumerThread(Thread):
         self.sock.close()
         # Делаем кнопки активными
         mainWin.button_search.setDisabled(False)
-        mainWin.button_edit.setDisabled(False)
+        # mainWin.button_edit.setDisabled(False)
         mainWin.movie.stop()
         mainWin.label_progress.hide()
+
         return
 
     # преобразовываем полученные данные в строки и складываем в список
@@ -472,14 +537,27 @@ class ConsumerThread(Thread):
         except IndexError:
             firmware = QTableWidgetItem("00.00.00")
 
+        search_mac_entry = []
+        for j in range(0, 16):
+            temp_mac = ""
+            temp_ip = ""
+            for i in range(0, 6):
+                temp_mac += "{0:02X}:".format(data[(284 + 10 * j) + i])
+            for i in range(0, 4):
+                temp_ip += "{0}.".format(data[(290 + 10 * j) + i])
+
+            search_mac_entry.append((temp_mac[0: -1], temp_ip[0: -1]))
+
         return dict(model=model, ip=ip, mask=mask, mac=mac, description=description,
-                    location=location, firmware=firmware)
+                    location=location, firmware=firmware, search_mac_entry=search_mac_entry)
 
     def add_in_table(self, data, i):
         if i >= mainWin.table.rowCount():
             mainWin.table.setRowCount(mainWin.table.rowCount() + 1)
 
         device = self.convert_data(data)
+
+        list_cam[i] = device["search_mac_entry"]
 
         mainWin.table.setItem(i, 0, device["model"])
         mainWin.table.setItem(i, 1, device["ip"])
@@ -509,7 +587,7 @@ class ConsumerThread(Thread):
 if __name__ == '__main__':
     import sys
 
-    WINDOW_TITLE = "TFortis Scanner v2.0.2"
+    WINDOW_TITLE = "TFortis Scanner v2.1.0"
     WINDOW_ICON = "resource/tfortis_ico.ico"
 
     app = QApplication(sys.argv)
