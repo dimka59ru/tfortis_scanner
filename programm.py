@@ -293,11 +293,22 @@ class MainWindow(QWidget):
     # Функция для получения IP-адресов сетевых карт
     # @staticmethod
     def get_ip_addresses(self):
+        addrs = []
         try:
-            addrs = socket.gethostbyname_ex(socket.gethostname())[2]
+            # addrs = socket.gethostbyname_ex(socket.gethostname())[2]
+
+            import netifaces
+            for iface in netifaces.interfaces():
+                ifaddrs = netifaces.ifaddresses(iface)
+                if netifaces.AF_INET in ifaddrs:
+                    for ifaddr in ifaddrs[netifaces.AF_INET]:
+                        if 'addr' in ifaddr and ifaddr['addr'][0:3] != "169" and ifaddr['addr'][0:3] != "127":
+                            addrs.append(ifaddr['addr'])
+
             return addrs
+
         except Exception as e:
-            self.information_message(e)
+            self.information_message(str(e))
 
     def combo_chosen(self, i):
         self.my_ip = self.iface_box.itemText(i)
@@ -395,7 +406,7 @@ class EditWindow(QDialog):
         sock.settimeout(0.5)
         sock.bind((mainWin.my_ip, UDP_PORT))
         sock.sendto(message, (IP_SEND, UDP_PORT))
-        end_time = time.time() + 2
+        end_time = time.time() + 3
         flag_answer = False
         while time.time() < end_time:
             logging.debug("send data")
@@ -587,7 +598,7 @@ class ConsumerThread(Thread):
 if __name__ == '__main__':
     import sys
 
-    WINDOW_TITLE = "TFortis Scanner v2.1.0"
+    WINDOW_TITLE = "TFortis Scanner v2.1.1"
     WINDOW_ICON = "resource/tfortis_ico.ico"
 
     app = QApplication(sys.argv)

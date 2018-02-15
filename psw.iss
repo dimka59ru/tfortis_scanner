@@ -12,9 +12,9 @@
 ; Имя приложения
 #define   Name       "TFortis Scanner"
 ; Версия приложения
-#define   Version    "2.0.2"
+#define   Version    "2.1.1"
 ; Фирма-разработчик
-#define   Publisher  "Fort-Telecom Ltd."
+#define   Publisher  "Fort-Telecom LLC."
 ; Сайт фирмы разработчика
 #define   URL        "http://www.tfortis.ru"
 ; Имя исполняемого модуля
@@ -43,11 +43,11 @@ DefaultDirName={pf}\{#Name}
 DefaultGroupName={#Name}
 
 ; Каталог, куда будет записан собранный setup и имя исполняемого файла
-OutputDir=C:\Users\USER\YandexDisk\Python\PSW Searcher\20170118_v2.0.2\dist
+OutputDir=D:\GitHub\tfortis_scanner\v2.1.1
 OutputBaseFileName={#Name}_{#Version}-setup
 
 ; Файл иконки
-SetupIconFile=C:\Users\USER\YandexDisk\Python\PSW Searcher\20170118_v2.0.2\build\exe.win32-3.4\resource\logo_tfortis.ico
+SetupIconFile=D:\GitHub\tfortis_scanner\resource\logo_tfortis.ico
 
 ; Параметры сжатия
 Compression=lzma
@@ -67,10 +67,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 
 ; Исполняемый файл
-Source: "C:\Users\USER\YandexDisk\Python\PSW Searcher\20170118_v2.0.2\build\exe.win32-3.4\tfortis.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "D:\GitHub\tfortis_scanner\build\exe.win32-3.4\tfortis.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 ; Прилагающиеся ресурсы
-Source: "C:\Users\USER\YandexDisk\Python\PSW Searcher\20170118_v2.0.2\build\exe.win32-3.4\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "D:\GitHub\tfortis_scanner\build\exe.win32-3.4\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ;------------------------------------------------------------------------------
 ;   Указываем установщику, где он должен взять иконки
